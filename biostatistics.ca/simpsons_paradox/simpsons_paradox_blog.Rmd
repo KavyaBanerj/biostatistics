@@ -1,0 +1,239 @@
+---
+title:
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.align = 'center')
+
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(ggdag)
+
+theme_set(theme_minimal())
+
+set.seed(1)
+```
+
+[Find the RMarkdown Notebook on Github and Run the Code Yourself!](https://www.biostatistics.ca/github-library/?utm_source=biostatistics&utm_medium=blog&utm_campaign=simpsons_paradox)
+
+## Introduction: A Medical Mystery
+
+Imagine you're analyzing data from a clinical trial testing a new treatment. You run a simple chi-square test and find that the treatment has absolutely no effect—the test statistic is exactly zero. Case closed, right?
+
+Not so fast. What if I told you that when you analyze the same data separately for men and women, the treatment shows a significant *positive* effect for both groups? This isn't a statistical error—it's Simpson's Paradox, one of the most counterintuitive phenomena in data analysis.
+
+## The Classic Example
+
+Let's examine the famous example^[Simpson, E. H. (1951). The interpretation of interaction in contingency tables. Journal of the Royal Statistical Society: Series B (Methodological), 13(2), 238–241. Oxford University Press. https://www.jstor.org/stable/i349694] that E.H. Simpson used to illustrate this paradox in 1951, scaled up for statistical power. Consider a hypothetical medical treatment given to male and female patients, where we track survival outcomes.
+
+```{r}
+# Recreate Simpson's original example data
+simpsons_original_example_male <- data.frame(
+  Status = c("Alive", "Dead"),
+  Untreated = c(800, 600),
+  Treated = c(1600, 1000)
+)
+
+simpsons_original_example_female <- data.frame(
+  Status = c("Alive", "Dead"),  
+  Untreated = c(400, 600),
+  Treated = c(2400, 3000)
+)
+
+# Display the data
+knitr::kable(simpsons_original_example_male, caption = "Male Patients")
+knitr::kable(simpsons_original_example_female, caption = "Female Patients")
+```
+
+Let's test whether treatment and survival are independent for each group:
+
+```{r}
+# Chi-square tests for males and females separately
+male_test <- chisq.test(as.matrix(simpsons_original_example_male[,2:3]), correct = FALSE)
+female_test <- chisq.test(as.matrix(simpsons_original_example_female[,2:3]), correct = FALSE)
+
+# Display results
+results <- data.frame(
+  Sex = c("Male", "Female"),
+  Chi_Square = round(c(male_test$statistic, female_test$statistic), 2),
+  P_Value = c("< 0.01", "< 0.01")
+)
+
+knitr::kable(results, caption = "Chi-Square Tests by Sex")
+```
+
+Both tests are highly significant! The treatment appears to have a positive effect on survival for both men and women.
+
+### The Plot Twist
+
+Now let's look at the aggregated data:
+
+```{r}
+# Aggregate the data across sexes
+simpsons_aggregated <- data.frame(
+  Status = c("Alive", "Dead"),
+  Untreated = c(1200, 1200),  # 800+400, 600+600
+  Treated = c(4000, 4000)     # 1600+2400, 1000+3000
+)
+
+knitr::kable(simpsons_aggregated, caption = "Aggregated Data (All Patients)")
+
+# Chi-square test for aggregated data
+aggregated_test <- chisq.test(as.matrix(simpsons_aggregated[,2:3]), correct = FALSE)
+print(paste("Chi-square statistic:", round(aggregated_test$statistic, 2)))
+print(paste("P-value:", round(aggregated_test$p.value, 2)))
+```
+
+The chi-square statistic is exactly **zero**! The data fits perfectly with what we'd expect if treatment and survival were completely independent.
+
+### The Paradoxical Question
+
+As Pearl and colleagues eloquently state:
+
+> "The data seem to say that if we know the patient's gender—male or female—we can prescribe the drug, but if the gender is unknown we should not! Obviously, that conclusion is ridiculous. If the drug helps men and women, it must help *anyone*; our lack of knowledge of the patient's gender cannot make the drug harmful."
+
+So what's going on here? Should we adjust for sex or not?
+
+## A Modern Simulation
+
+Let's create our own Simpson's Paradox example with simulated data to see how this phenomenon can arise:
+
+```{r}
+n <- 400 
+sd_x <- 2
+  
+group <- sample(1:5,n, replace = T)
+mu_x <- 5.5*(1:5)
+group <- factor(group)
+
+n_1 <- sum(group==1)
+x_1 <- rnorm(n_1, mu_x[1], sd_x)
+
+n_2 <- sum(group==2)
+x_2 <- rnorm(n_2, mu_x[2], sd_x)
+
+n_3 <- sum(group==3)
+x_3 <- rnorm(n_3, mu_x[3], sd_x)
+
+n_4 <- sum(group==4)
+x_4 <- rnorm(n_4, mu_x[4], sd_x)
+
+n_5 <- sum(group==5)
+x_5 <- rnorm(n_5, mu_x[5], sd_x)
+
+y_1 <- 30 + -1*x_1 + rnorm(n_1, 0, 2.5)
+y_2 <- 40 + -1*x_2 + rnorm(n_2, 0, 3.5)
+y_3 <- 50 + -1*x_3 + rnorm(n_3, 0, 4.5)
+y_4 <- 60 + -1*x_4 + rnorm(n_4, 0, 3.5)
+y_5 <- 70 + -1*x_5 + rnorm(n_5, 0, 2.5)
+
+x <- c(x_1, x_2, x_3, x_4, x_5)
+y <- c(y_1, y_2, y_3, y_4, y_5)
+
+group <- factor(c(rep(1, n_1), rep(2, n_2), rep(3, n_3), rep(4, n_4), rep(5, n_5)))
+data <- data.frame(x = x, y = y, group = group)
+```
+
+```{r}
+simpsons.paradox.hidden.plot <- data %>%
+  ggplot(aes(x=x, y=y)) +
+  geom_point() +
+  geom_smooth(method="lm", se = F) +
+  ggtitle("Simulated data (hiding Simpson's Paradox)") +
+  theme(axis.ticks = element_blank(),
+        axis.text = element_blank())
+
+print(simpsons.paradox.hidden.plot)
+```
+
+```{r}
+simpsons.paradox.exhibited.plot <- data %>%
+  ggplot(aes(x=x, y=y, colour = group)) +
+  geom_point() +
+  geom_smooth(method="lm", se = F) +
+  ggtitle("Simulated data (exhibiting Simpson's Paradox)") +
+  theme(axis.ticks = element_blank(),
+        axis.text = element_blank())
+
+print(simpsons.paradox.exhibited.plot)
+```
+
+Now let's look at the regression coefficients:
+
+```{r}
+lm <- lm(y~x, data=data)
+knitr::kable(coef(summary(lm)), 
+             caption = "Overall Regression: Y ~ X", 
+             digits = 3)
+```
+
+```{r}
+lm.simpsons.paradox <- lm(y~x + group, data=data)
+knitr::kable(coef(summary(lm.simpsons.paradox)), 
+             caption = "Grouped Regression: Y ~ X + Group", 
+             digits = 3)
+```
+
+The overall relationship shows a positive slope, but when we control for the grouping variable, the relationship between x and y becomes negative!
+
+## The Causal Inference Solution
+
+The answer to the Simpson's Paradox puzzle cannot be solved by statistical arguments alone. It requires understanding the **causal relationships** between variables.
+
+The key question is: Is sex a **confounder** or not? If sex causally affects both treatment assignment and outcomes, then we should adjust for it. The basic confounding scenario can be represented with a simple causal diagram where Sex ($S$) affects both Treatment ($X$) and Outcome ($Y$), as follows.
+
+```{r}
+theme_set(theme_dag())
+
+confounder_dag <- dagify(Y ~ X + S,
+                   X ~ S,
+                   exposure = "X",
+                   outcome = "Y",
+                   coords = list(x = c(Y = 1, X = -1, S = 0)/2,
+                                 y = c(Y = 0, X = 0, S = 1)/2)
+                   )
+
+confounder_dag <- ggdag(confounder_dag, text = TRUE, node_size = 16*1.5, text_size = 3.88*1.5) +
+  geom_dag_edges_link(arrow = grid::arrow(length = grid::unit(15, "pt"), type = "closed"))
+
+print(confounder_dag)
+```
+
+Other [DAG structures](https://www.biostatistics.ca/common-dag-structures-confounding-collider-bias-and-mediation/?utm_source=biostatistics&utm_medium=blog&utm_campaign=simpsons_paradox) imply other adjustment strategies: make sure you understand the causal process that generated your data before performing controls such as regression adjustment, stratification, propensity score techniques, etc! If you want to learn more about DAGs, [Chapter 3 of my book is already available if you pre-order](https://justinbelair.com/causal-inference-in-statistics-book/?utm_source=biostatistics&utm_medium=blog&utm_campaign=simpsons_paradox) and contains a full introduction to causal diagrams, including exercises, code, and a case-study.
+
+### Why This Paradox Matters
+
+Simpson's Paradox isn't just a statistical curiosity—it has real-world implications:
+
+- **Medical studies**: Treatment effects can appear different when stratified by patient characteristics
+- **Educational research**: Intervention effects may vary across schools or demographics  
+- **Business analytics**: Marketing campaigns might show different effectiveness across customer segments
+- **Policy evaluation**: Program impacts can depend on population subgroups
+
+### Key Takeaways
+
+1. **Aggregation can hide important patterns**: Always explore your data at different levels of granularity
+2. **Context matters**: Statistical significance doesn't tell you whether to adjust for a variable
+3. **Causal thinking is essential**: Understanding the data-generating process helps resolve apparent paradoxes
+4. **Visualization helps**: Plotting data by subgroups can reveal hidden relationships
+
+## The Bigger Picture
+
+Simpson's Paradox is just one example of how statistical analysis without causal reasoning can lead us astray. In my upcoming book, [**Causal Inference in Statistics, with Exercises, Practice Projects, and R Code Notebooks**](https://justinbelair.ca/causal-inference-in-statistics-book?utm_source=biostatistics&utm_medium=blog&utm_campaign=simpsons_paradox), I dive deep into these concepts, dissolving statistical one-by-one (Simpson's pardox, Lord's Paradox, Berkson's Paradox, etc.) and providing you with the full-suite of tools to think causally about your data.
+
+The book includes:
+
+- Detailed explanations of causal concepts with real-world examples
+- Step-by-step R/Python code for all analyses
+- (Many!) Practice exercises to solidify your understanding
+- Complete case studies with real-world datasets you can analyze yourself
+
+**Want to master causal thinking in statistics?** [Download the first chapter for free](https://justinbelair.ca/causal-inference-in-statistics-book?utm_source=biostatistics&utm_medium=blog&utm_campaign=simpsons_paradox) and see how causal inference can transform your approach to data analysis.
+
+## Causal Inference Communities
+
+*If you enjoyed this post and want to receive monthly insights about causal inference in statistics, [**subscribe to my newsletter**](https://causal-inference-in-statistics.beehiiv.com/subscribe?utm_source=biostatistics&utm_medium=blog&utm_campaign=simpsons_paradox). Join the stats nerds! 🤓*
+
+*You can also join the [**Causal Inference Nerds Discord Community**](https://discord.com/invite/2xKvHMhYDg), a lively community of causal inference enthusiasts, from beginner to expert, eager to share and learn together. We host a journal club, a book club, we share memes, and more. It's a lot of fun!*
